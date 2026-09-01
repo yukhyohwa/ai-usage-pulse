@@ -69,8 +69,9 @@ function collectUsage() {
 }
 
 let previousFingerprint = "";
+let refreshVersion = null;
 
-async function syncUsage() {
+async function syncUsage(force = false) {
   const payload = collectUsage();
   if (!payload) return;
   const fingerprint = JSON.stringify({
@@ -79,7 +80,7 @@ async function syncUsage() {
     reset_cards: payload.reset_cards,
     source_url: payload.source_url
   });
-  if (fingerprint === previousFingerprint) return;
+  if (!force && fingerprint === previousFingerprint) return;
 
   try {
     const result = await chrome.runtime.sendMessage({type: "usage", payload});
@@ -97,6 +98,19 @@ async function syncUsage() {
   }
 }
 
+async function checkRefreshRequest() {
+  try {
+    const response = await fetch("http://127.0.0.1:8765/chatgpt-refresh-version");
+    if (!response.ok) return;
+    const {version} = await response.json();
+    if (refreshVersion === version) return;
+    refreshVersion = version;
+    await syncUsage(true);
+  } catch {
+    // UsagePulse is not running. The normal page-change sync will retry later.
+  }
+}
+
 let mutationTimer;
 new MutationObserver(() => {
   clearTimeout(mutationTimer);
@@ -104,4 +118,6 @@ new MutationObserver(() => {
 }).observe(document.documentElement, {childList: true, subtree: true, characterData: true});
 
 setInterval(syncUsage, 30_000);
+setInterval(checkRefreshRequest, 2_000);
 syncUsage();
+checkRefreshRequest();

@@ -19,6 +19,7 @@ class ChatGPTUsageBridge:
     def __init__(self, port: int = 8765) -> None:
         self._lock = threading.Lock()
         self._payload: dict[str, Any] = {}
+        self._refresh_version = 0
         bridge = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -39,6 +40,10 @@ class ChatGPTUsageBridge:
             def do_GET(self) -> None:  # noqa: N802
                 if self.path == "/health":
                     self.send_json(200, {"ok": True})
+                elif self.path == "/chatgpt-refresh-version":
+                    with bridge._lock:
+                        version = bridge._refresh_version
+                    self.send_json(200, {"version": version})
                 else:
                     self.send_json(404, {"ok": False})
 
@@ -87,6 +92,11 @@ class ChatGPTUsageBridge:
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return self._payload.copy()
+
+    def request_refresh(self) -> None:
+        """Notify an open Chrome Usage page that the user requested a refresh."""
+        with self._lock:
+            self._refresh_version += 1
 
     def close(self) -> None:
         self._server.shutdown()

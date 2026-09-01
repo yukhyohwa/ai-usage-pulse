@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QDialogButtonBox,
+    QCheckBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -47,11 +48,15 @@ class Config:
     low_balance_usd: float = 20.0
     quota_per_usd: int = 500_000
     newapi_user_id: str = ""
+    open_chatgpt_usage_page: bool = True
 
 
 def load_config() -> Config:
     try:
-        return Config(**json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+        values = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        if not isinstance(values, dict):
+            raise TypeError("config must be an object")
+        return Config(**{key: value for key, value in values.items() if key in Config.__dataclass_fields__})
     except (OSError, json.JSONDecodeError, TypeError):
         return Config()
 
@@ -170,7 +175,7 @@ class FetchWorker(QObject):
 class SettingsDialog(QDialog):
     def __init__(self, config: Config, credential_saved: bool, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("New API Connection")
+        self.setWindowTitle("UsagePulse Settings")
 
         layout = QFormLayout(self)
         self.url = QLineEdit(config.base_url)
@@ -186,6 +191,8 @@ class SettingsDialog(QDialog):
         self.interval.setRange(60, 86_400)
         self.interval.setValue(config.refresh_seconds)
         self.threshold = QLineEdit(str(config.low_balance_usd))
+        self.open_chatgpt_usage_page = QCheckBox("Open the fixed ChatGPT/Codex Usage page")
+        self.open_chatgpt_usage_page.setChecked(config.open_chatgpt_usage_page)
 
         layout.addRow("Platform URL", self.url)
         layout.addRow("Dashboard Access Token", self.access_token)
@@ -198,6 +205,13 @@ class SettingsDialog(QDialog):
         layout.addRow("", help_text)
         layout.addRow("Refresh interval (seconds)", self.interval)
         layout.addRow("Low-balance alert (USD)", self.threshold)
+        layout.addRow("ChatGPT button", self.open_chatgpt_usage_page)
+        chatgpt_help = QLabel(
+            "When disabled, UsagePulse does not navigate Chrome. Keep any ChatGPT/Codex Usage "
+            "page open to receive a manual Refresh signal."
+        )
+        chatgpt_help.setWordWrap(True)
+        layout.addRow("", chatgpt_help)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
@@ -215,7 +229,6 @@ class DashboardWidget(QWidget):
         self._drag_origin: QPoint | None = None
         self.setWindowTitle("UsagePulse")
         self.setMinimumWidth(560)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
         self.setStyleSheet(
             """
             QWidget {
@@ -378,12 +391,20 @@ class MonitorApp(QObject):
         self.dashboard.setVisible(not self.dashboard.isVisible())
 
     def open_chatgpt_usage(self) -> None:
+        if not self.config.open_chatgpt_usage_page:
+            self.dashboard.status.setText(
+                "ChatGPT/Codex Usage page opening is disabled. Refresh signals are sent to any open Usage page."
+            )
+            return
         QDesktopServices.openUrl(QUrl(CHATGPT_USAGE_URL))
 
     def refresh(self) -> None:
+        self.chatgpt_bridge.request_refresh()
+        self.refresh_chatgpt_usage()
+        QTimer.singleShot(2_200, self.refresh_chatgpt_usage)
         if self._fetch_thread is not None and self._fetch_thread.isRunning():
             return
-        self.dashboard.status.setText("Refreshing New API data…")
+        self.dashboard.status.setText("Refreshing New API data; requesting ChatGPT/Codex Usage sync…")
         self.dashboard.refresh_button.setEnabled(False)
         self._fetch_thread = QThread(self)
         self._fetch_worker = FetchWorker(self.client)
@@ -444,6 +465,7 @@ class MonitorApp(QObject):
         self.dashboard.chat_reset.setText("Reset credits: " + (reset or "--"))
         if self.last_balance is not None:
             self.update_metrics(self.last_balance, self.last_usage or 0.0)
+        self.dashboard.status.setText("ChatGPT/Codex Usage updated.")
 
     def _chatgpt_tooltip(self) -> str:
         limits = [
@@ -468,6 +490,7 @@ class MonitorApp(QObject):
                 low_balance_usd=float(dialog.threshold.text()),
                 quota_per_usd=500_000,
                 newapi_user_id=dialog.user_id.text().strip(),
+                open_chatgpt_usage_page=dialog.open_chatgpt_usage_page.isChecked(),
             )
         except ValueError:
             QMessageBox.warning(self.dashboard, "Invalid settings", "Low-balance alert must be numeric.")
