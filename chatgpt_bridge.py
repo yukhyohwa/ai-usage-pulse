@@ -1,0 +1,93 @@
+"""Loopback-only receiver for the UsagePulse Chrome extension."""
+
+from __future__ import annotations
+
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
+
+
+class ReusableThreadingHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+class ChatGPTUsageBridge:
+    """Receive display-only usage values; credentials are never accepted."""
+
+    def __init__(self, port: int = 8765) -> None:
+        self._lock = threading.Lock()
+        self._payload: dict[str, Any] = {}
+        bridge = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def send_json(self, status: int, body: dict[str, Any]) -> None:
+                encoded = json.dumps(body).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def do_OPTIONS(self) -> None:  # noqa: N802
+                self.send_json(204, {})
+
+            def do_GET(self) -> None:  # noqa: N802
+                if self.path == "/health":
+                    self.send_json(200, {"ok": True})
+                else:
+                    self.send_json(404, {"ok": False})
+
+            def do_POST(self) -> None:  # noqa: N802
+                if self.path != "/chatgpt-usage":
+                    self.send_json(404, {"ok": False})
+                    return
+                try:
+                    size = int(self.headers.get("Content-Length", "0"))
+                    if not 0 < size <= 4096:
+                        raise ValueError("invalid payload size")
+                    payload = json.loads(self.rfile.read(size))
+                    if not isinstance(payload, dict):
+                        raise ValueError("payload must be an object")
+                    allowed = {
+                        "five_hour",
+                        "weekly",
+                        "reset_time",
+                        "reset_cards",
+                        "captured_at",
+                        "source_url",
+                    }
+                    with bridge._lock:
+                        bridge._payload = {
+                            key: str(value)[:240]
+                            for key, value in payload.items()
+                            if key in allowed and value
+                        }
+                    self.send_json(200, {"ok": True})
+                except (ValueError, json.JSONDecodeError):
+                    self.send_json(400, {"ok": False})
+
+            def log_message(self, _format: str, *_args: object) -> None:
+                return
+
+        self._server = ReusableThreadingHTTPServer(("127.0.0.1", port), Handler)
+        self._thread = threading.Thread(
+            target=self._server.serve_forever,
+            name="chatgpt-usage-bridge",
+            daemon=True,
+        )
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return self._payload.copy()
+
+    def close(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()

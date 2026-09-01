@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "UsagePulse ChatGPT Sync",
+  "version": "1.0.0",
+  "description": "Syncs visible ChatGPT/Codex plan limits to the local UsagePulse widget.",
+  "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1:8765/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "UsagePulse ChatGPT Sync",
+    "default_popup": "popup.html"
+  }
+}
