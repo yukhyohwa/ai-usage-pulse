@@ -9,7 +9,8 @@ from typing import Any
 
 
 class ReusableThreadingHTTPServer(ThreadingHTTPServer):
-    allow_reuse_address = True
+    # A second instance would split extension updates between two widgets.
+    allow_reuse_address = False
     daemon_threads = True
 
 

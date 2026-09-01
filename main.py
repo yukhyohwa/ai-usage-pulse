@@ -511,7 +511,16 @@ def main() -> int:
     if not QSystemTrayIcon.isSystemTrayAvailable():
         QMessageBox.critical(None, "Unsupported", "No system tray is available on this device.")
         return 1
-    monitor = MonitorApp()
+    try:
+        monitor = MonitorApp()
+    except OSError as exc:
+        QMessageBox.information(
+            None,
+            "UsagePulse already running",
+            f"UsagePulse could not start its local sync receiver: {exc}\n\n"
+            "Close the existing UsagePulse instance before starting another one.",
+        )
+        return 0
     return app.exec()
 
 
