@@ -1,8 +1,6 @@
 // Reads only usage text rendered by ChatGPT and sends it to 127.0.0.1.
 // It never reads cookies, local storage, passwords, prompts, or conversations.
 
-const usageUrl = "https://chatgpt.com/codex/cloud/settings/analytics#usage";
-
 function clean(value) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, 240);
 }
@@ -112,15 +110,10 @@ async function checkRefreshRequest() {
   try {
     const response = await fetch("http://127.0.0.1:8765/chatgpt-refresh-version");
     if (!response.ok) return;
-    const {version, navigate} = await response.json();
+    const {version} = await response.json();
     if (refreshVersion === version) return;
     refreshVersion = version;
-    // A normal ChatGPT tab is enough for UsagePulse to reach the extension.
-    // On an explicit refresh, take it to the page that exposes the plan limits.
-    if (navigate && !location.pathname.startsWith("/codex/cloud/settings/analytics")) {
-      location.assign(usageUrl);
-      return;
-    }
+    // This script is injected only on the Codex Analytics Usage page.
     await syncUsage(true);
   } catch {
     // UsagePulse is not running. The normal page-change sync will retry later.

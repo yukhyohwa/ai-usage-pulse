@@ -207,8 +207,8 @@ class SettingsDialog(QDialog):
         layout.addRow("Low-balance alert (USD)", self.threshold)
         layout.addRow("ChatGPT button", self.open_chatgpt_usage_page)
         chatgpt_help = QLabel(
-            "When disabled, the ChatGPT button does not navigate Chrome. The Refresh button still "
-            "opens the Usage page when no ChatGPT page is detected."
+            "When disabled, the ChatGPT button does not open Chrome. Refresh only re-syncs an "
+            "already-open Usage page and never redirects a ChatGPT tab."
         )
         chatgpt_help.setWordWrap(True)
         layout.addRow("", chatgpt_help)
@@ -399,20 +399,23 @@ class MonitorApp(QObject):
         return QDesktopServices.openUrl(QUrl(CHATGPT_USAGE_URL))
 
     def manual_refresh(self) -> None:
-        """Refresh all data and open the ChatGPT usage page if it is not open."""
+        """Refresh all data and open the Usage page only when it is not open."""
         self.refresh(open_chatgpt_if_needed=True)
 
     def refresh(self, open_chatgpt_if_needed: bool = False) -> None:
-        self.chatgpt_bridge.request_refresh(navigate_to_usage=open_chatgpt_if_needed)
-        chatgpt_was_open = self.chatgpt_bridge.has_active_page()
-        if open_chatgpt_if_needed and not chatgpt_was_open:
+        self.chatgpt_bridge.request_refresh()
+        chatgpt_usage_is_open = self.chatgpt_bridge.has_active_page()
+        if open_chatgpt_if_needed and not chatgpt_usage_is_open:
             self.open_chatgpt_usage(force=True)
         self.refresh_chatgpt_usage()
-        QTimer.singleShot(4_500 if not chatgpt_was_open else 2_200, self.refresh_chatgpt_usage)
+        QTimer.singleShot(
+            4_500 if open_chatgpt_if_needed and not chatgpt_usage_is_open else 2_200,
+            self.refresh_chatgpt_usage,
+        )
         if self._fetch_thread is not None and self._fetch_thread.isRunning():
             return
         chatgpt_status = "requesting ChatGPT/Codex Usage sync…"
-        if open_chatgpt_if_needed and not chatgpt_was_open:
+        if open_chatgpt_if_needed and not chatgpt_usage_is_open:
             chatgpt_status = "opening ChatGPT/Codex Usage to sync limits…"
         self.dashboard.status.setText(f"Refreshing New API data; {chatgpt_status}")
         self.dashboard.refresh_button.setEnabled(False)

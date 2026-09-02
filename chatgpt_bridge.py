@@ -22,7 +22,6 @@ class ChatGPTUsageBridge:
         self._lock = threading.Lock()
         self._payload: dict[str, Any] = {}
         self._refresh_version = 0
-        self._refresh_navigation_version = 0
         self._last_page_heartbeat = 0.0
         bridge = self
 
@@ -47,8 +46,7 @@ class ChatGPTUsageBridge:
                 elif self.path == "/chatgpt-refresh-version":
                     with bridge._lock:
                         version = bridge._refresh_version
-                        navigate = version == bridge._refresh_navigation_version
-                    self.send_json(200, {"version": version, "navigate": navigate})
+                    self.send_json(200, {"version": version})
                 else:
                     self.send_json(404, {"ok": False})
 
@@ -104,12 +102,10 @@ class ChatGPTUsageBridge:
         with self._lock:
             return self._payload.copy()
 
-    def request_refresh(self, navigate_to_usage: bool = False) -> None:
+    def request_refresh(self) -> None:
         """Notify an open Chrome Usage page that the user requested a refresh."""
         with self._lock:
             self._refresh_version += 1
-            if navigate_to_usage:
-                self._refresh_navigation_version = self._refresh_version
 
     def has_active_page(self, max_age_seconds: float = 8.0) -> bool:
         """Whether a ChatGPT page with the companion extension is still open."""
