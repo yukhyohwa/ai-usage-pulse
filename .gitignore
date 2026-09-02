@@ -21,7 +21,7 @@ dist/
 *.spec
 
 # Runtime and diagnostics
-*.log
+logs/
 *.tmp
 *.bak
 usagepulse-*.png

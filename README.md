@@ -26,6 +26,7 @@ Local state is intentionally excluded from Git:
 - `config.json` contains non-secret preferences and the New API user ID.
 - The New API Access Token is stored in Windows Credential Manager.
 - `.venv`, caches, debug captures, and build output are ignored.
+- `logs/usagepulse.log` contains startup, shutdown, refresh failures, Qt warnings, and uncaught exception traces. The log rotates at 2 MB and retains five previous files.
 
 ## Run
 

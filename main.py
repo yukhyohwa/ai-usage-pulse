@@ -3,16 +3,30 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
+import threading
 import time
 from dataclasses import asdict, dataclass
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
 import keyring
 import requests
 from chatgpt_bridge import ChatGPTUsageBridge
-from PySide6.QtCore import QObject, QPoint, QThread, QTimer, Qt, QUrl, Signal, Slot
+from PySide6.QtCore import (
+    QObject,
+    QPoint,
+    QThread,
+    QTimer,
+    Qt,
+    QtMsgType,
+    QUrl,
+    Signal,
+    Slot,
+    qInstallMessageHandler,
+)
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
@@ -39,6 +53,49 @@ LEGACY_APP_NAME = "NewApiMonitor"
 ACCESS_TOKEN_SECRET = "new-api-access-token"
 CHATGPT_USAGE_URL = "https://chatgpt.com/codex/cloud/settings/analytics#usage"
 CONFIG_PATH = Path(__file__).with_name("config.json")
+LOG_DIR = Path(__file__).with_name("logs")
+LOG_PATH = LOG_DIR / "usagepulse.log"
+logger = logging.getLogger(APP_NAME)
+
+
+def setup_logging() -> None:
+    """Persist crash diagnostics when the app is launched through pythonw.exe."""
+    if logger.handlers:
+        return
+    LOG_DIR.mkdir(exist_ok=True)
+    handler = RotatingFileHandler(
+        LOG_PATH,
+        maxBytes=2 * 1024 * 1024,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)-8s %(threadName)s %(name)s: %(message)s")
+    )
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+    def log_unhandled_exception(exc_type: type[BaseException], exc: BaseException, traceback: Any) -> None:
+        logger.critical("Unhandled Python exception", exc_info=(exc_type, exc, traceback))
+
+    def log_thread_exception(args: threading.ExceptHookArgs) -> None:
+        logger.critical(
+            "Unhandled exception in thread %s",
+            args.thread.name if args.thread else "unknown",
+            exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+        )
+
+    def log_qt_message(message_type: QtMsgType, _context: Any, message: str) -> None:
+        if message_type == QtMsgType.QtDebugMsg:
+            return
+        level = logging.CRITICAL if message_type == QtMsgType.QtFatalMsg else logging.WARNING
+        logger.log(level, "Qt message: %s", message)
+
+    sys.excepthook = log_unhandled_exception
+    threading.excepthook = log_thread_exception
+    qInstallMessageHandler(log_qt_message)
+    logger.info("Logging initialized. Log file: %s", LOG_PATH)
 
 
 @dataclass
@@ -58,11 +115,13 @@ def load_config() -> Config:
             raise TypeError("config must be an object")
         return Config(**{key: value for key, value in values.items() if key in Config.__dataclass_fields__})
     except (OSError, json.JSONDecodeError, TypeError):
+        logger.exception("Could not load config.json; using defaults")
         return Config()
 
 
 def save_config(config: Config) -> None:
     CONFIG_PATH.write_text(json.dumps(asdict(config), indent=2), encoding="utf-8")
+    logger.info("Settings saved")
 
 
 class NewApiClient:
@@ -169,6 +228,7 @@ class FetchWorker(QObject):
         try:
             self.done.emit(*self.client.fetch_metrics())
         except Exception as exc:
+            logger.exception("New API refresh failed")
             self.failed.emit(str(exc))
 
 
@@ -518,15 +578,20 @@ class MonitorApp(QObject):
 
 
 def main() -> int:
+    setup_logging()
+    logger.info("UsagePulse starting")
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)
+    app.aboutToQuit.connect(lambda: logger.info("UsagePulse exiting"))
     if not QSystemTrayIcon.isSystemTrayAvailable():
+        logger.error("System tray is unavailable")
         QMessageBox.critical(None, "Unsupported", "No system tray is available on this device.")
         return 1
     try:
         monitor = MonitorApp()
     except OSError as exc:
+        logger.exception("UsagePulse could not start")
         QMessageBox.information(
             None,
             "UsagePulse already running",
@@ -534,7 +599,9 @@ def main() -> int:
             "Close the existing UsagePulse instance before starting another one.",
         )
         return 0
-    return app.exec()
+    exit_code = app.exec()
+    logger.info("UsagePulse exited with code %s", exit_code)
+    return exit_code
 
 
 if __name__ == "__main__":
