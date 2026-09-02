@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
@@ -21,6 +22,8 @@ class ChatGPTUsageBridge:
         self._lock = threading.Lock()
         self._payload: dict[str, Any] = {}
         self._refresh_version = 0
+        self._refresh_navigation_version = 0
+        self._last_page_heartbeat = 0.0
         bridge = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -44,11 +47,18 @@ class ChatGPTUsageBridge:
                 elif self.path == "/chatgpt-refresh-version":
                     with bridge._lock:
                         version = bridge._refresh_version
-                    self.send_json(200, {"version": version})
+                        navigate = version == bridge._refresh_navigation_version
+                    self.send_json(200, {"version": version, "navigate": navigate})
                 else:
                     self.send_json(404, {"ok": False})
 
             def do_POST(self) -> None:  # noqa: N802
+                if self.path == "/chatgpt-page-heartbeat":
+                    # Posted only while a ChatGPT page with the extension is loaded.
+                    with bridge._lock:
+                        bridge._last_page_heartbeat = time.monotonic()
+                    self.send_json(200, {"ok": True})
+                    return
                 if self.path != "/chatgpt-usage":
                     self.send_json(404, {"ok": False})
                     return
@@ -94,10 +104,17 @@ class ChatGPTUsageBridge:
         with self._lock:
             return self._payload.copy()
 
-    def request_refresh(self) -> None:
+    def request_refresh(self, navigate_to_usage: bool = False) -> None:
         """Notify an open Chrome Usage page that the user requested a refresh."""
         with self._lock:
             self._refresh_version += 1
+            if navigate_to_usage:
+                self._refresh_navigation_version = self._refresh_version
+
+    def has_active_page(self, max_age_seconds: float = 8.0) -> bool:
+        """Whether a ChatGPT page with the companion extension is still open."""
+        with self._lock:
+            return time.monotonic() - self._last_page_heartbeat <= max_age_seconds
 
     def close(self) -> None:
         self._server.shutdown()

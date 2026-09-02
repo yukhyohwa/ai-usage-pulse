@@ -1,6 +1,8 @@
 // Reads only usage text rendered by ChatGPT and sends it to 127.0.0.1.
 // It never reads cookies, local storage, passwords, prompts, or conversations.
 
+const usageUrl = "https://chatgpt.com/codex/cloud/settings/analytics#usage";
+
 function clean(value) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, 240);
 }
@@ -71,6 +73,14 @@ function collectUsage() {
 let previousFingerprint = "";
 let refreshVersion = null;
 
+async function sendHeartbeat() {
+  try {
+    await fetch("http://127.0.0.1:8765/chatgpt-page-heartbeat", {method: "POST"});
+  } catch {
+    // UsagePulse is not running. The next heartbeat will retry.
+  }
+}
+
 async function syncUsage(force = false) {
   const payload = collectUsage();
   if (!payload) return;
@@ -102,9 +112,15 @@ async function checkRefreshRequest() {
   try {
     const response = await fetch("http://127.0.0.1:8765/chatgpt-refresh-version");
     if (!response.ok) return;
-    const {version} = await response.json();
+    const {version, navigate} = await response.json();
     if (refreshVersion === version) return;
     refreshVersion = version;
+    // A normal ChatGPT tab is enough for UsagePulse to reach the extension.
+    // On an explicit refresh, take it to the page that exposes the plan limits.
+    if (navigate && !location.pathname.startsWith("/codex/cloud/settings/analytics")) {
+      location.assign(usageUrl);
+      return;
+    }
     await syncUsage(true);
   } catch {
     // UsagePulse is not running. The normal page-change sync will retry later.
@@ -119,5 +135,7 @@ new MutationObserver(() => {
 
 setInterval(syncUsage, 30_000);
 setInterval(checkRefreshRequest, 2_000);
+setInterval(sendHeartbeat, 4_000);
+sendHeartbeat();
 syncUsage();
 checkRefreshRequest();

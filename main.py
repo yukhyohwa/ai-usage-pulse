@@ -207,8 +207,8 @@ class SettingsDialog(QDialog):
         layout.addRow("Low-balance alert (USD)", self.threshold)
         layout.addRow("ChatGPT button", self.open_chatgpt_usage_page)
         chatgpt_help = QLabel(
-            "When disabled, UsagePulse does not navigate Chrome. Keep any ChatGPT/Codex Usage "
-            "page open to receive a manual Refresh signal."
+            "When disabled, the ChatGPT button does not navigate Chrome. The Refresh button still "
+            "opens the Usage page when no ChatGPT page is detected."
         )
         chatgpt_help.setWordWrap(True)
         layout.addRow("", chatgpt_help)
@@ -278,7 +278,7 @@ class DashboardWidget(QWidget):
         self.refresh_button = QPushButton("Refresh")
         self.newapi_button = QPushButton("New API")
         self.chatgpt_button = QPushButton("ChatGPT")
-        self.refresh_button.clicked.connect(monitor.refresh)
+        self.refresh_button.clicked.connect(monitor.manual_refresh)
         self.newapi_button.clicked.connect(monitor.open_settings)
         self.chatgpt_button.clicked.connect(monitor.open_chatgpt_usage)
         heading.addWidget(self.refresh_button)
@@ -359,7 +359,7 @@ class MonitorApp(QObject):
         self.tray.setToolTip("UsagePulse: waiting for first update")
         menu = QMenu()
         menu.addAction("Show / Hide", self.toggle_dashboard)
-        menu.addAction("Refresh", self.refresh)
+        menu.addAction("Refresh", self.manual_refresh)
         menu.addAction("New API", self.open_settings)
         menu.addAction("Open ChatGPT Usage", self.open_chatgpt_usage)
         menu.addSeparator()
@@ -390,21 +390,31 @@ class MonitorApp(QObject):
     def toggle_dashboard(self) -> None:
         self.dashboard.setVisible(not self.dashboard.isVisible())
 
-    def open_chatgpt_usage(self) -> None:
-        if not self.config.open_chatgpt_usage_page:
+    def open_chatgpt_usage(self, force: bool = False) -> bool:
+        if not force and not self.config.open_chatgpt_usage_page:
             self.dashboard.status.setText(
                 "ChatGPT/Codex Usage page opening is disabled. Refresh signals are sent to any open Usage page."
             )
-            return
-        QDesktopServices.openUrl(QUrl(CHATGPT_USAGE_URL))
+            return False
+        return QDesktopServices.openUrl(QUrl(CHATGPT_USAGE_URL))
 
-    def refresh(self) -> None:
-        self.chatgpt_bridge.request_refresh()
+    def manual_refresh(self) -> None:
+        """Refresh all data and open the ChatGPT usage page if it is not open."""
+        self.refresh(open_chatgpt_if_needed=True)
+
+    def refresh(self, open_chatgpt_if_needed: bool = False) -> None:
+        self.chatgpt_bridge.request_refresh(navigate_to_usage=open_chatgpt_if_needed)
+        chatgpt_was_open = self.chatgpt_bridge.has_active_page()
+        if open_chatgpt_if_needed and not chatgpt_was_open:
+            self.open_chatgpt_usage(force=True)
         self.refresh_chatgpt_usage()
-        QTimer.singleShot(2_200, self.refresh_chatgpt_usage)
+        QTimer.singleShot(4_500 if not chatgpt_was_open else 2_200, self.refresh_chatgpt_usage)
         if self._fetch_thread is not None and self._fetch_thread.isRunning():
             return
-        self.dashboard.status.setText("Refreshing New API data; requesting ChatGPT/Codex Usage sync…")
+        chatgpt_status = "requesting ChatGPT/Codex Usage sync…"
+        if open_chatgpt_if_needed and not chatgpt_was_open:
+            chatgpt_status = "opening ChatGPT/Codex Usage to sync limits…"
+        self.dashboard.status.setText(f"Refreshing New API data; {chatgpt_status}")
         self.dashboard.refresh_button.setEnabled(False)
         self._fetch_thread = QThread(self)
         self._fetch_worker = FetchWorker(self.client)
