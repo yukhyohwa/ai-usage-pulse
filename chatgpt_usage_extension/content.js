@@ -1,6 +1,10 @@
 // Reads only usage text rendered by ChatGPT and sends it to 127.0.0.1.
 // It never reads cookies, local storage, passwords, prompts, or conversations.
 
+function isUsagePage() {
+  return /^\/settings\/usage\/?$/.test(location.pathname);
+}
+
 function clean(value) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, 240);
 }
@@ -40,6 +44,7 @@ function compactLimit(block) {
 }
 
 function collectUsage() {
+  if (!isUsagePage()) return null;
   const lines = pageLines();
   const fiveHour = blockBetween(
     lines,
@@ -72,6 +77,7 @@ let previousFingerprint = "";
 let refreshVersion = null;
 
 async function sendHeartbeat() {
+  if (!isUsagePage()) return;
   try {
     await fetch("http://127.0.0.1:8765/chatgpt-page-heartbeat", {method: "POST"});
   } catch {
@@ -107,13 +113,14 @@ async function syncUsage(force = false) {
 }
 
 async function checkRefreshRequest() {
+  if (!isUsagePage()) return;
   try {
     const response = await fetch("http://127.0.0.1:8765/chatgpt-refresh-version");
     if (!response.ok) return;
     const {version} = await response.json();
     if (refreshVersion === version) return;
     refreshVersion = version;
-    // This script is injected only on the Codex Analytics Usage page.
+    // Re-read the visible limits on the ChatGPT Settings Usage page.
     await syncUsage(true);
   } catch {
     // UsagePulse is not running. The normal page-change sync will retry later.

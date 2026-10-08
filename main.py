@@ -51,7 +51,7 @@ from PySide6.QtWidgets import (
 APP_NAME = "UsagePulse"
 LEGACY_APP_NAME = "NewApiMonitor"
 ACCESS_TOKEN_SECRET = "new-api-access-token"
-CHATGPT_USAGE_URL = "https://chatgpt.com/codex/cloud/settings/analytics#usage"
+CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage?tab=overview"
 CONFIG_PATH = Path(__file__).with_name("config.json")
 LOG_DIR = Path(__file__).with_name("logs")
 LOG_PATH = LOG_DIR / "usagepulse.log"

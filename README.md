@@ -46,7 +46,7 @@ Open `New API` in the widget and enter:
 - Dashboard Access Token: create it under `Profile → Access Token`
 - User ID: the numeric ID shown on the profile page
 
-The widget refreshes New API automatically every 30 minutes by default. The `Refresh` button performs an immediate New API update and requests a ChatGPT/Codex Usage re-sync. If the specific Codex Analytics Usage page is not already open, it opens that page in Chrome. It never redirects a normal ChatGPT tab.
+The widget refreshes New API automatically every 30 minutes by default. The `Refresh` button performs an immediate New API update and requests a ChatGPT/Codex Usage re-sync. If the ChatGPT Settings Usage page is not already open, it opens that page in Chrome. It never redirects a normal ChatGPT tab.
 
 ## ChatGPT/Codex sync
 
@@ -54,9 +54,9 @@ The widget refreshes New API automatically every 30 minutes by default. The `Ref
 2. Enable Developer mode.
 3. Choose `Load unpacked` and select `chatgpt_usage_extension`.
 4. After source changes, use the extension page's `Reload` button once.
-5. Click `ChatGPT` in UsagePulse to explicitly open the Codex Analytics Usage page. You can disable **Open the fixed ChatGPT/Codex Usage page** in settings to disable that separate button.
+5. Restart UsagePulse, then click `ChatGPT` to open [ChatGPT Settings > Usage](https://chatgpt.com/settings/usage?tab=overview). Reload any already-open Usage tab after reloading the extension. You can disable **Open the fixed ChatGPT/Codex Usage page** in settings to disable that separate button.
 
-The extension runs only on the Codex Analytics Usage URL. It reads only visible plan-limit text, never reads cookies, local storage, passwords, prompts, or conversations, and sends values only to `127.0.0.1:8765`.
+The extension runs only on the ChatGPT Settings Usage URL (`/settings/usage`). It stops reading and sending page heartbeats if that tab navigates away from Usage. It reads only visible plan-limit text, never reads cookies, local storage, passwords, prompts, or conversations, and sends values only to `127.0.0.1:8765`.
 
 The extension syncs after page changes and checks again every 30 seconds. Clicking `Refresh` in UsagePulse asks an already-open ChatGPT/Codex Usage page to re-read and re-sync within about two seconds. If no such page is open, UsagePulse opens one and waits for it to load. Ordinary ChatGPT pages are never redirected. The widget then displays **ChatGPT/Codex Usage updated.** when it receives new values.
 
